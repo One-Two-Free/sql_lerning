@@ -243,3 +243,373 @@ HAVING SUM(UnitPrice*Quantity*(1-Discount)) > 10000
 
 
 
+-- UNION (сложение)
+
+SELECT  Country, City
+FROM    Customers
+  UNION ALL
+SELECT  Country, City
+FROM    Employees
+ORDER BY Country, City
+------------------------------
+SELECT  Country, City
+FROM    Customers
+  UNION  -- без совпадающих строк
+SELECT  Country, City
+FROM    Employees
+ORDER BY Country, City
+
+-----------------------------
+SELECT  Country, City, 'Клиент' AS [Тип]
+FROM    Customers
+  UNION ALL
+SELECT  Country, City, 'Сотрудник'
+FROM    Employees
+ORDER BY Country, City
+
+
+
+-- EXCEPT (вычитание строк)
+
+-- список регионов клиентов, где нет сотрудников
+SELECT  Country, City
+FROM    Customers
+  EXCEPT
+SELECT  Country, City
+FROM    Employees
+
+-- список регионов сотрудников, где нет клиентов
+SELECT  Country, City
+FROM    Employees
+  EXCEPT
+SELECT  Country, City
+FROM    Customers
+
+
+
+-- INTERSECT (пересечение наборов)
+
+-- список регионов клиентов, где есть сотрудники
+SELECT  Country, City
+FROM    Customers
+  INTERSECT
+SELECT  Country, City
+FROM    Employees
+
+
+
+-- подзапрос
+
+-- Сколько заказов оформил каждый продавец (ФИО)?
+
+--1 Список продавцов (из ФИО)
+SELECT FirstName + ' '+LastName AS ФИО
+FROM   Employees
+
+-- промеж рез-т
+-- Сколько заказов оформил продавец №1 (EmployeeID = 1)
+-- 2 вложенный запрос
+SELECT COUNT(*)
+FROM   Orders
+WHERE  EmployeeID = 1
+
+-- Итого
+SELECT FirstName + ' '+LastName AS ФИО,
+       (
+		SELECT COUNT(*)
+		FROM   Orders AS O
+		WHERE  O.EmployeeID = E.EmployeeID  -- условие корреляции
+	   ) AS Kol
+FROM   Employees AS E
+------------------------------------------
+SELECT FirstName + ' '+LastName AS ФИО,
+       (
+		SELECT COUNT(*)
+		FROM   Orders
+		WHERE  EmployeeID = Employees.EmployeeID  -- условие корреляции
+	   ) AS Kol
+FROM   Employees
+
+
+
+
+-- Найти макс цену товара в каждой категории (название)
+
+--1 
+SELECT CategoryName
+FROM   Categories
+
+--2
+SELECT MAX(UnitPrice)
+FROM   Products
+WHERE  CategoryID = 1
+
+-- Итого
+SELECT CategoryName,
+       (
+		SELECT MAX(UnitPrice)
+		FROM   Products
+		WHERE  CategoryID = Categories.CategoryID
+	   ) AS MaxPrice
+FROM   Categories
+
+
+
+
+-- Сколько штук товаров продано в каждой категории (название)?
+
+--1
+SELECT CategoryName,
+       (
+	   SELECT SUM(Quantity)
+	   FROM   [Order Details]
+	   WHERE  ProductID = (...) -- - список продуктов одной категории
+	   ) AS Штук
+FROM   Categories
+
+-- (...) - список продуктов одной категории
+
+--2
+SELECT ProductID
+FROM   Products
+WHERE  CategoryID = 1
+
+-- Итого
+SELECT CategoryName,
+       (
+	   SELECT SUM(Quantity)
+	   FROM   [Order Details]
+	   WHERE  ProductID IN 
+	          (
+				SELECT ProductID
+				FROM   Products
+				WHERE  CategoryID = Categories.CategoryID			  
+			  ) -- - список продуктов одной категории
+	   ) AS Штук
+FROM   Categories
+
+
+
+
+
+-- подзапросы
+
+-- Показать заказы клиентов из Мексики
+-- 1
+SELECT OrderID, OrderDate, CustomerID
+FROM Orders
+
+-- 2 определитиь клиентов из Мексики
+SELECT CustomerID
+FROM   Customers
+WHERE  Country = 'Mexico'
+
+-- Итого
+SELECT OrderID, OrderDate, CustomerID
+FROM Orders
+WHERE CustomerID IN 
+      (
+		SELECT CustomerID
+		FROM   Customers
+		WHERE  Country = 'Mexico' -- не скалярный, автономный
+	  )
+
+-- табличный подзапрос
+SELECT CustomerID, OrderID
+FROM
+	(
+	SELECT OrderID, OrderDate, CustomerID
+	FROM Orders
+	WHERE CustomerID IN 
+		  (
+			SELECT CustomerID
+			FROM   Customers
+			WHERE  Country = 'Mexico' -- не скалярный, автономный
+		  )
+	) AS T1
+ORDER BY CustomerID
+
+
+
+
+-- Сколько штук товаров продано в каждую страну?
+
+--1 
+SELECT ShipCountry
+FROM   Orders
+GROUP BY ShipCountry
+
+--2
+SELECT  SUM(Quantity)
+FROM    [Order Details]
+WHERE   OrderID IN (...) -- заказы в одну страну
+
+--2.1
+SELECT OrderID
+FROM   Orders
+WHERE  ShipCountry = 'USA'
+
+-- Итого
+SELECT ShipCountry,
+       (
+		SELECT  SUM(Quantity)
+		FROM    [Order Details]
+		WHERE   OrderID IN 
+		        (
+				SELECT OrderID
+				FROM   Orders O
+				WHERE  O.ShipCountry = CO.ShipCountry
+				)
+	   ) AS Штук
+FROM   Orders CO
+GROUP BY ShipCountry
+ORDER BY ShipCountry
+
+-- 2 способ -- сколько штук продано в каждом заказе и вывести страну
+-- этот вариант эффективнее примерно в 4 раза
+SELECT ShipCountry,OrderID,
+       (
+		SELECT SUM(Quantity)
+		FROM [Order Details]
+		WHERE OrderID = Orders.OrderID
+	   ) AS OrderTotal
+FROM   Orders
+
+-- содаем табличный подзапрос
+SELECT ShipCountry, SUM(OrderTotal) AS Total
+FROM
+(
+SELECT ShipCountry,OrderID,
+       (
+		SELECT SUM(Quantity)
+		FROM [Order Details]
+		WHERE OrderID = Orders.OrderID
+	   ) AS OrderTotal
+FROM   Orders
+) AS T1
+GROUP BY ShipCountry
+ORDER BY ShipCountry
+
+-- сравнение с 1 вариантом
+-- Итого
+SELECT ShipCountry,
+       (
+		SELECT  SUM(Quantity)
+		FROM    [Order Details]
+		WHERE   OrderID IN 
+		        (
+				SELECT OrderID
+				FROM   Orders
+				WHERE  ShipCountry = CO.ShipCountry
+				)
+	   ) AS Штук
+FROM   Orders CO
+GROUP BY ShipCountry
+ORDER BY ShipCountry
+
+
+SELECT SUM(Quantity)
+FROM [Order Details]
+WHERE OrderID = 10248
+
+
+
+
+-- Для каждой категории показать макс цену товара
+SELECT CategoryName,
+       (
+	   SELECT MAX(UnitPrice)
+	   FROM  Products
+	   WHERE CategoryID = Categories.CategoryID
+	   ) AS MaxPrice
+FROM   Categories
+
+-- теперь JOIN
+SELECT C.CategoryName, MAX(UnitPrice) AS MaxPrice
+FROM   Categories AS C JOIN Products AS P
+ON     C.CategoryID = P.CategoryID
+GROUP BY C.CategoryName
+
+-- теперь JOIN
+SELECT C.CategoryName, MAX(UnitPrice) AS MaxPrice
+FROM   Categories AS C LEFT JOIN Products AS P
+ON     C.CategoryID = P.CategoryID
+GROUP BY C.CategoryName
+
+
+
+
+-- Сколько заказов оформил каждый продавец в Лондон
+SELECT FirstName + ' '+Lastname AS Name
+FROM   Employees 
+
+SELECT COUNT(*)
+FROM   Orders
+WHERE  EmployeeID = 2
+------------------- Подзапросом
+SELECT FirstName + ' '+Lastname AS Name,
+       (
+		SELECT COUNT(*)
+		FROM   Orders
+		WHERE  EmployeeID = Employees.EmployeeID
+		       AND
+			   ShipCity = 'London'
+	   ) AS Kol
+FROM   Employees 
+ORDER BY Name
+
+-- теперь через JOIN
+---------------------------------------------
+SELECT FirstName + ' '+Lastname AS Name,
+       (
+		SELECT COUNT(*)
+		FROM   Orders
+		WHERE  EmployeeID = Employees.EmployeeID
+		       AND
+			   ShipCity = 'London'
+	   ) AS Kol
+FROM   Employees 
+ORDER BY Name
+
+
+SELECT FirstName + ' '+Lastname AS Name, COUNT(*) AS Kol
+FROM   Employees E JOIN Orders O
+ON     E.EmployeeID = O.EmployeeID
+WHERE  O.ShipCity = 'London'
+GROUP BY FirstName + ' '+Lastname
+ORDER BY Name
+-------------------------------------------
+SELECT FirstName + ' '+Lastname AS Name, COUNT(*) AS Kol
+FROM   Employees E JOIN Orders O
+ON     E.EmployeeID = O.EmployeeID
+WHERE  O.ShipCity = 'Paris'
+GROUP BY FirstName + ' '+Lastname
+ORDER BY Name
+--------------------------------------
+SELECT FirstName + ' '+Lastname AS Name, COUNT(*) AS Kol
+FROM   Employees E LEFT JOIN Orders O
+ON     E.EmployeeID = O.EmployeeID
+       AND
+	   O.ShipCity = 'Paris'
+--WHERE  O.ShipCity = 'Paris'
+GROUP BY FirstName + ' '+Lastname
+ORDER BY Name
+
+-- 1 правильный JOIN + доп условие (в поле ON)
+
+SELECT FirstName + ' '+Lastname AS Name, COUNT(OrderID) AS Kol
+FROM   Employees E LEFT JOIN Orders O
+ON     E.EmployeeID = O.EmployeeID
+       AND
+	   O.ShipCity = 'Paris'
+GROUP BY FirstName + ' '+Lastname
+ORDER BY Name
+
+--2 Считаем правильно кол-во для колонок, кот могут содержать NULL
+--   COUNT(любая колонка правой таблицы)
+
+
+
+
+
+
